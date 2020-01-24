@@ -66,3 +66,101 @@ This section has moved here: https://facebook.github.io/create-react-app/docs/de
 ### `npm run build` fails to minify
 
 This section has moved here: https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+pipeline {
+    environment {
+    def global_props = readProperties file: 'jenkinsglobal.properties'
+	def local_props = ''
+	registry = "${global_props.registry}"
+	discovery = "${global_props.discovery}"
+	configserver = "${global_props.configserver}"
+	configport = "${global_props.configport}"
+	dockerImage = ''
+    def MY_KEY = credentials('sshid')
+	username ="${MY_KEY_USR}"
+	password = "${MY_KEY_PSW}"
+              }
+    agent any
+		tools {
+                jdk "openjdk1.8_141"
+                maven "Maven 3.6.2"
+              }
+       stages {
+			  stage ('Git Clone') {
+			  steps{
+			  git branch: "${GITBRANCH}",
+	      	  credentialsId: 'nopay',
+	      	  url: "${SERVICE_GIT_URL}"
+			  script {
+			           local_props = readProperties file: 'jenkinslocal.properties'
+			  }
+	      	   
+               }
+			   }
+                 stage('Execute Maven') {
+                             steps{
+                             script {
+                               sh '''
+                                 echo $registry
+                                 mvn clean install
+                                 '''
+                                    }
+                                }
+                   }
+                   stage('Building image') {
+      steps{
+        script {
+            dockerImage = docker.build registry + "/${local_props.servicename}:$BUILD_NUMBER"
+        }
+      }
+    }
+    stage('Push Image') {
+      steps{
+        script {
+          docker.withRegistry( '') {
+          dockerImage.push()
+          }
+          }
+        }
+    }
+     stage('Deploy the docker image') {
+      steps{
+            sh "sshpass -p ${password} ssh -tt sdadm@22.85.211.72 'docker run -d -p ${local_props.containerport}:${local_props.hostport} -e SPRING_PROFILES_ACTIVE=${ENVIRONMENT} -e REGISTRY_HOST=$discovery -e REGISTRY_PORT=${local_props.discoveryport} -e CONFIG_SERVER=$configserver -e CONFIG_PORT=$configport --name ${local_props.containername} --network nonpay-service_default $registry/${local_props.servicename}:$BUILD_NUMBER | exit'"
+           }
+          }
+     stage('Remove Unused docker image') {
+      steps{
+           sh "docker rmi $registry/${local_props.servicename}:$BUILD_NUMBER"
+            }
+    }
+}
+
+}
